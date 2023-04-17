@@ -161,6 +161,25 @@ class Word2VecSubst(object):
             return wn_frequency_predictor(context)
 
         return best_lem
+    
+    def predict_with_score(self,context : Context) -> "tuple[str, float]":
+        candidates = get_candidates(context.lemma, context.pos)
+
+        max_sim = -1
+        best_lem = None
+        for candidate in candidates:
+            try:
+                sim = self.model.similarity(context.lemma, candidate)
+                if (sim > max_sim):
+                    max_sim = sim
+                    best_lem = candidate
+            except KeyError:
+                continue
+
+        if best_lem == None:
+            return wn_frequency_predictor(context)
+
+        return (best_lem, max_sim)
 
 
 class BertPredictor(object):
@@ -252,6 +271,45 @@ class BertPredictor(object):
 
 
         return lowest_word 
+    
+    def predict_with_score(self, context : Context) -> "tuple[str, float]":
+        candidates = get_candidates(context.lemma, context.pos)
+        ctx = context.left_context + ['[MASK]'] + context.right_context
+        ctx_str = ""
+        for tok in ctx:
+            if tok in [',', '.', ';', ':']:
+                ctx_str = ctx_str + tok
+            else:
+                ctx_str = ctx_str + ' ' + tok
+
+        mask_id = self.tokenizer.encode('[MASK]')[1]
+
+        input_toks = self.tokenizer.encode(ctx_str)
+        target_idx = input_toks.index(mask_id)
+
+        input_mat = np.array(input_toks).reshape((1, -1))
+        outputs = self.model.predict(input_mat, verbose = 0)
+        predictions = outputs[0]
+        best_words = np.argsort(predictions[0][target_idx])[::-1]
+
+        best_list = self.tokenizer.convert_ids_to_tokens(best_words)
+
+        lowest_idx = float('inf')
+        lowest_word = None
+
+        for candidate in candidates:
+            if candidate in best_list:
+                idx = best_list.index(candidate)
+                if (idx < lowest_idx):
+                    lowest_idx = idx
+                    lowest_word = candidate
+
+        if (lowest_word == None):
+            return wn_frequency_predictor(context)
+
+        score = (1 - (lowest_idx / len(best_list))) ** 100
+
+        return (lowest_word, score)
 
 # w2v and bert have surprisingly similar scores. Inspecting the .predict files, it seems like 
 # there's a chance that these hits come from non-identical sets. That is, if we can somehow
@@ -261,7 +319,24 @@ class BertPredictor(object):
 
 # The way this works: if the score from w2v is not good enough, use BERT. If the score from BERT
 # is not good enough, use baseline.
+
+# With this very convoluted method we managed to improve our score by 0.5% ;)
 def w2v_bert_predict(context, predictor, b_predictor):
+    THRESH_1 = 0.5
+    THRESH_2 = 0.85
+
+    w2v_pred = predictor.predict_with_score(context)
+    bert_pred = b_predictor.predict_with_score(context)
+
+    # print(w2v_pred, bert_pred)
+
+    if (w2v_pred[1] > THRESH_1):
+        return w2v_pred[0]
+    
+    if (bert_pred[1] > THRESH_2):
+        return bert_pred[0]
+    
+    return wn_frequency_predictor(context)
 
 if __name__=="__main__":
 
@@ -275,10 +350,11 @@ if __name__=="__main__":
     for context in read_lexsub_xml(sys.argv[1]):
         # print(context)  # useful for debugging
 
-        prediction = wn_frequency_predictor(context)          # baseline.predict
+        # prediction = wn_frequency_predictor(context)          # baseline.predict
         # prediction = wn_simple_lesk_predictor(context)        # lesk.predict 
         # prediction = predictor.predict_nearest(context)       # w2v.predict
         # prediction = b_predictor.predict(context)             # bert.predict
         # prediction = b_predictor.predict_with_lemmas(context) # bertlem.predict
+        prediction = w2v_bert_predict(context, predictor, b_predictor) # fancy.predict
 
         print("{}.{} {} :: {}".format(context.lemma, context.pos, context.cid, prediction))
