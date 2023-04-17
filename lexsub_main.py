@@ -7,6 +7,7 @@ from lexsub_xml import Context
 # suggested imports 
 from nltk.corpus import wordnet as wn
 from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer # part 5
 
 import numpy as np
 import tensorflow
@@ -169,7 +170,42 @@ class BertPredictor(object):
         self.model = transformers.TFDistilBertForMaskedLM.from_pretrained('distilbert-base-uncased')
 
     def predict(self, context : Context) -> str:
-        return None # replace for part 5
+        candidates = get_candidates(context.lemma, context.pos)
+        ctx = context.left_context + ['[MASK]'] + context.right_context
+        ctx_str = ""
+        for tok in ctx:
+            if tok in [',', '.', ';', ':']:
+                ctx_str = ctx_str + tok
+            else:
+                ctx_str = ctx_str + ' ' + tok
+
+        mask_id = self.tokenizer.encode('[MASK]')[1]
+
+        input_toks = self.tokenizer.encode(ctx_str)
+        target_idx = input_toks.index(mask_id)
+
+        input_mat = np.array(input_toks).reshape((1, -1))
+        outputs = self.model.predict(input_mat, verbose = 0)
+        predictions = outputs[0]
+        best_words = np.argsort(predictions[0][target_idx])[::-1]
+
+        best_list = self.tokenizer.convert_ids_to_tokens(best_words)
+
+        lowest_idx = float('inf')
+        lowest_word = None
+
+        for candidate in candidates:
+            if candidate in best_list:
+                idx = best_list.index(candidate)
+                if (idx < lowest_idx):
+                    lowest_idx = idx
+                    lowest_word = candidate
+
+        if (lowest_word == None):
+            return wn_frequency_predictor(context)
+
+
+        return lowest_word
 
     
 
@@ -177,10 +213,12 @@ if __name__=="__main__":
 
     # At submission time, this program should run your best predictor (part 6).
 
-    W2VMODEL_FILENAME = '~/GoogleNews-vectors-negative300.bin.gz'
-    predictor = Word2VecSubst(W2VMODEL_FILENAME)
+    # W2VMODEL_FILENAME = '~/GoogleNews-vectors-negative300.bin.gz'
+    # predictor = Word2VecSubst(W2VMODEL_FILENAME)
+
+    b_predictor = BertPredictor()
 
     for context in read_lexsub_xml(sys.argv[1]):
         # print(context)  # useful for debugging
-        prediction = predictor.predict_nearest(context) 
+        prediction = b_predictor.predict(context) 
         print("{}.{} {} :: {}".format(context.lemma, context.pos, context.cid, prediction))
