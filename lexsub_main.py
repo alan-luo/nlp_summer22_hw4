@@ -70,6 +70,17 @@ def wn_frequency_predictor(context : Context) -> str:
 
     return max_lem
 
+# Get the definition and examples of a synset, remove all stopwords, concat into a big array 
+def get_syn_gloss(synset, remove_stops): # str[]
+    syn_def = list(filter(remove_stops, synset.definition().split()))
+
+    syn_examples = []
+    for example in synset.examples():
+        syn_examples = syn_examples + list(filter(remove_stops, example.split()))
+
+    syn_gloss = syn_def + syn_examples
+    return syn_gloss
+    
 def wn_simple_lesk_predictor(context : Context) -> str:
     # Part 3
 
@@ -77,33 +88,52 @@ def wn_simple_lesk_predictor(context : Context) -> str:
     
     stop_words = stopwords.words('english')
     stop_words = stop_words + [',', '.', ';', ':']
+    remove_stops = lambda word: word not in stop_words
+
 
     # Get word context
     word_ctx = context.left_context + context.right_context
-    word_ctx = list(filter(lambda word: word not in stop_words, word_ctx))
+    word_ctx = list(filter(remove_stops, word_ctx))
 
-    # Compute highest overlapping synset
+    # Compute highest overlapping synsets
     max_intersect = -1
-    best_synset = None
+    best_synsets = []
 
     synsets = wn.synsets(context.lemma, pos=context.pos)
     for synset in synsets:
-        syn_def = list(filter(lambda word: word not in stop_words, synset.definition().split()))
-        intersect = list(filter(lambda word: word in word_ctx, syn_def))
+        syn_gloss = get_syn_gloss(synset, remove_stops) 
+
+        for hyp_syn in synset.hypernyms():
+            hyp_gloss = get_syn_gloss(hyp_syn, remove_stops)
+            syn_gloss = syn_gloss + hyp_gloss
+
+        intersect = list(filter(lambda word: word in word_ctx, syn_gloss))
 
         if len(intersect) > max_intersect:
             max_intersect = len(intersect)
-            best_synset = synset
+            best_synsets = [synset]
+        elif len(intersect) == max_intersect:
+            best_synsets.append(synset)
 
-    # Find highest freq from that synset
-    max_count = -1
-    best_lemma = None
-    for lemma in best_synset.lemmas():
-        if lemma.count() > max_count:
-            max_count = lemma.count()
-            best_lemma = lemma
+    max_syn_count = -1
+    best_syn_lemma = None
 
-    return best_lemma.name()
+    # Pick the synset->lemma pair with the highest freq
+    for synset in best_synsets:
+        # best_lemma is the most freq lemma in this synset
+        max_count = -1
+        best_lemma = None
+        for lemma in synset.lemmas():
+            if lemma.count() > max_count:
+                max_count = lemma.count()
+                best_lemma = lemma
+        
+        # now, compare with our global best
+        if max_count > max_syn_count:
+            max_syn_count = max_count
+            best_syn_lemma = best_lemma
+
+    return best_syn_lemma.name()
    
 
 class Word2VecSubst(object):
