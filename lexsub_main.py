@@ -42,7 +42,33 @@ def smurf_predictor(context : Context) -> str:
     return 'smurf'
 
 def wn_frequency_predictor(context : Context) -> str:
-    return None # replace for part 2
+    # Part 2
+    # Get a map from all lemmas to counts, pick the most common lemma
+
+    # Construct a map from lemmas to counts
+    lem_to_count = dict()
+
+    synsets = wn.synsets(context.lemma, pos=context.pos)
+    for synset in synsets:
+        for lemma in synset.lemmas():
+            name = lemma.name()
+            if (name == context.lemma):
+                continue
+            if (name in lem_to_count):
+                lem_to_count[name] += lemma.count()
+            else:
+                lem_to_count[name] = lemma.count()
+
+    max_count = -1
+    max_lem = None
+
+    for lem, count in lem_to_count.items():
+        if count > max_count:
+            max_count = count
+            max_lem = lem
+
+
+    return max_lem
 
 def wn_simple_lesk_predictor(context : Context) -> str:
     return None #replace for part 3        
@@ -71,12 +97,11 @@ class BertPredictor(object):
 if __name__=="__main__":
 
     # At submission time, this program should run your best predictor (part 6).
-    print(get_candidates('slow', 'a'))
 
     #W2VMODEL_FILENAME = 'GoogleNews-vectors-negative300.bin.gz'
     #predictor = Word2VecSubst(W2VMODEL_FILENAME)
 
-    # for context in read_lexsub_xml(sys.argv[1]):
-    #     #print(context)  # useful for debugging
-    #     prediction = smurf_predictor(context) 
-    #     print("{}.{} {} :: {}".format(context.lemma, context.pos, context.cid, prediction))
+    for context in read_lexsub_xml(sys.argv[1]):
+        print(context)  # useful for debugging
+        prediction = wn_frequency_predictor(context) 
+        print("{}.{} {} :: {}".format(context.lemma, context.pos, context.cid, prediction))
