@@ -25,7 +25,15 @@ def tokenize(s):
 
 def get_candidates(lemma, pos) -> List[str]:
     # Part 1
-    return [] 
+    lemmas = set()
+    synsets = wn.synsets(lemma, pos=pos)
+    for synset in synsets:
+        lemmas.update(synset.lemmas())
+
+    word_set = set(map(lambda l: l.name(), lemmas))
+    word_set.remove(lemma)
+
+    return list(word_set)
 
 def smurf_predictor(context : Context) -> str:
     """
@@ -63,11 +71,12 @@ class BertPredictor(object):
 if __name__=="__main__":
 
     # At submission time, this program should run your best predictor (part 6).
+    print(get_candidates('slow', 'a'))
 
     #W2VMODEL_FILENAME = 'GoogleNews-vectors-negative300.bin.gz'
     #predictor = Word2VecSubst(W2VMODEL_FILENAME)
 
-    for context in read_lexsub_xml(sys.argv[1]):
-        #print(context)  # useful for debugging
-        prediction = smurf_predictor(context) 
-        print("{}.{} {} :: {}".format(context.lemma, context.pos, context.cid, prediction))
+    # for context in read_lexsub_xml(sys.argv[1]):
+    #     #print(context)  # useful for debugging
+    #     prediction = smurf_predictor(context) 
+    #     print("{}.{} {} :: {}".format(context.lemma, context.pos, context.cid, prediction))
