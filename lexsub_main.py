@@ -7,7 +7,7 @@ from lexsub_xml import Context
 # suggested imports 
 from nltk.corpus import wordnet as wn
 from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer # part 5
+from nltk.stem import WordNetLemmatizer # part 6
 
 import numpy as np
 import tensorflow
@@ -206,19 +206,79 @@ class BertPredictor(object):
 
 
         return lowest_word
-
     
+    def predict_with_lemmas(self, context : Context) -> str:
+        # Part 6 - I thought it was weird that in the candidate list we were passing in lemmas
+        # while the outputs from BERT are in the conjugated / modified word forms. So, in this
+        # approach I thought of lemmatizing all of the BERT outputs before looking at the
+        # candidate list. Unfortunately it actually gives worse performance than the raw BERT
+        # output. Not sure why.
+        wnl = WordNetLemmatizer()
+
+        candidates = get_candidates(context.lemma, context.pos)
+        ctx = context.left_context + ['[MASK]'] + context.right_context
+        ctx_str = ""
+        for tok in ctx:
+            if tok in [',', '.', ';', ':']:
+                ctx_str = ctx_str + tok
+            else:
+                ctx_str = ctx_str + ' ' + tok
+
+        mask_id = self.tokenizer.encode('[MASK]')[1]
+
+        input_toks = self.tokenizer.encode(ctx_str)
+        target_idx = input_toks.index(mask_id)
+
+        input_mat = np.array(input_toks).reshape((1, -1))
+        outputs = self.model.predict(input_mat, verbose = 0)
+        predictions = outputs[0]
+        best_words = np.argsort(predictions[0][target_idx])[::-1]
+
+        best_list = self.tokenizer.convert_ids_to_tokens(best_words)
+        best_list = [wnl.lemmatize(w) for w in best_list]
+
+        lowest_idx = float('inf')
+        lowest_word = None
+
+        for candidate in candidates:
+            if candidate in best_list:
+                idx = best_list.index(candidate)
+                if (idx < lowest_idx):
+                    lowest_idx = idx
+                    lowest_word = candidate
+
+        if (lowest_word == None):
+            return wn_frequency_predictor(context)
+
+
+        return lowest_word 
+
+# w2v and bert have surprisingly similar scores. Inspecting the .predict files, it seems like 
+# there's a chance that these hits come from non-identical sets. That is, if we can somehow
+# figure out which context should use which predictor, we might be able to get a score of up to
+# 34% = 2 * 17% (in the very optimistic case when these sets are disjoint). We'll throw in the
+# baseline predictor into the mix for good measure.
+
+# The way this works: if the score from w2v is not good enough, use BERT. If the score from BERT
+# is not good enough, use baseline.
+def w2v_bert_predict(context, predictor, b_predictor):
 
 if __name__=="__main__":
 
     # At submission time, this program should run your best predictor (part 6).
 
-    # W2VMODEL_FILENAME = '~/GoogleNews-vectors-negative300.bin.gz'
-    # predictor = Word2VecSubst(W2VMODEL_FILENAME)
+    W2VMODEL_FILENAME = '~/GoogleNews-vectors-negative300.bin.gz'
+    predictor = Word2VecSubst(W2VMODEL_FILENAME)
 
     b_predictor = BertPredictor()
 
     for context in read_lexsub_xml(sys.argv[1]):
         # print(context)  # useful for debugging
-        prediction = b_predictor.predict(context) 
+
+        prediction = wn_frequency_predictor(context)          # baseline.predict
+        # prediction = wn_simple_lesk_predictor(context)        # lesk.predict 
+        # prediction = predictor.predict_nearest(context)       # w2v.predict
+        # prediction = b_predictor.predict(context)             # bert.predict
+        # prediction = b_predictor.predict_with_lemmas(context) # bertlem.predict
+
         print("{}.{} {} :: {}".format(context.lemma, context.pos, context.cid, prediction))
