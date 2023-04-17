@@ -142,6 +142,7 @@ class Word2VecSubst(object):
         self.model = gensim.models.KeyedVectors.load_word2vec_format(filename, binary=True)    
 
     def predict_nearest(self,context : Context) -> str:
+        # Part 4
         candidates = get_candidates(context.lemma, context.pos)
 
         max_sim = -1
