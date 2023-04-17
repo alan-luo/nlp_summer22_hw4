@@ -71,7 +71,39 @@ def wn_frequency_predictor(context : Context) -> str:
     return max_lem
 
 def wn_simple_lesk_predictor(context : Context) -> str:
-    return None #replace for part 3        
+    # Part 3
+
+    # Select best synset by highest gloss overlap, then select most freq in that synset
+    
+    stop_words = stopwords.words('english')
+    stop_words = stop_words + [',', '.', ';', ':']
+
+    # Get word context
+    word_ctx = context.left_context + context.right_context
+    word_ctx = list(filter(lambda word: word not in stop_words, word_ctx))
+
+    # Compute highest overlapping synset
+    max_intersect = -1
+    best_synset = None
+
+    synsets = wn.synsets(context.lemma, pos=context.pos)
+    for synset in synsets:
+        syn_def = list(filter(lambda word: word not in stop_words, synset.definition().split()))
+        intersect = list(filter(lambda word: word in word_ctx, syn_def))
+
+        if len(intersect) > max_intersect:
+            max_intersect = len(intersect)
+            best_synset = synset
+
+    # Find highest freq from that synset
+    max_count = -1
+    best_lemma = None
+    for lemma in best_synset.lemmas():
+        if lemma.count() > max_count:
+            max_count = lemma.count()
+            best_lemma = lemma
+
+    return best_lemma.name()
    
 
 class Word2VecSubst(object):
@@ -102,6 +134,6 @@ if __name__=="__main__":
     #predictor = Word2VecSubst(W2VMODEL_FILENAME)
 
     for context in read_lexsub_xml(sys.argv[1]):
-        print(context)  # useful for debugging
-        prediction = wn_frequency_predictor(context) 
+        # print(context)  # useful for debugging
+        prediction = wn_simple_lesk_predictor(context) 
         print("{}.{} {} :: {}".format(context.lemma, context.pos, context.cid, prediction))
